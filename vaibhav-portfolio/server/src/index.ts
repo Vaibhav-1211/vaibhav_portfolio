@@ -1,60 +1,46 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
-import { body, validationResult } from 'express-validator';
-import { projects, skills } from './data/portfolioData';
+import publicRoutes from './routes/publicRoutes';
+import authRoutes from './routes/authRoutes';
+import adminRoutes from './routes/adminRoutes';
+import { authMiddleware } from './middleware/auth';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 // Middleware
 app.use(helmet());
-app.use(cors({ origin: 'http://localhost:5173' }));
+app.use(cors({
+  origin: CLIENT_URL,
+  credentials: true,
+}));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// Database Connection
+mongoose.connect(process.env.MONGO_URI as string)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('MongoDB connection error:', err));
 
 // Routes
-app.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date() });
+app.use('/api', publicRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', authMiddleware, adminRoutes);
+
+// Global Error Handler
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Something went wrong!' });
 });
 
-app.get('/api/projects', (req: Request, res: Response) => {
-    res.json(projects);
-});
-
-app.get('/api/skills', (req: Request, res: Response) => {
-    res.json(skills);
-});
-
-app.post(
-    '/api/contact',
-    [
-        body('name').notEmpty().withMessage('Name is required'),
-        body('email').isEmail().withMessage('Valid email is required'),
-        body('subject').notEmpty().withMessage('Subject is required'),
-        body('message').notEmpty().withMessage('Message is required'),
-    ],
-    (req: Request, res: Response): any => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ success: false, errors: errors.array() });
-        }
-
-        const { name, email, subject, message } = req.body;
-
-        // In a real app, this would send an email or save to a DB.
-        console.log(`[Contact Form Submission] Name: ${name}, Email: ${email}, Subject: ${subject}`);
-
-        res.json({
-            success: true,
-            message: "Thank you for reaching out! I'll get back to you soon.",
-        });
-    }
-);
-
-// Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
